@@ -1,0 +1,220 @@
+---
+- name: NGINX installation on Redhat family and Debian family using NGINX official repo
+  hosts: '*'
+  become: true
+  become_method: "{{ play_become_method }}"
+  become_user: root
+  gather_facts: true
+  
+  vars:
+    ansible_remote_tmp: /tmp
+
+  tasks:
+    - name: Install NGINX on Redhat family
+      block:
+        - name: Set package manager fact
+          ansible.builtin.set_fact:
+            pkg_mgr: "{{ 'dnf' if ansible_facts.pkg_mgr == 'dnf' else 'yum' }}"
+
+        - name: Install prerequisites for NGINX repo on yum based systems
+          ansible.builtin.yum:
+            name: "{{ item }}"
+            state: present
+          loop:
+            - yum-utils
+            - gnupg2
+          when: ansible_pkg_mgr == "yum" 
+
+        - name: Install prerequisites for NGINX repo on yum based systems
+          ansible.builtin.dnf:
+            name: "{{ item }}"
+            state: present
+          loop:
+            - yum-utils
+            - gnupg2
+          when: ansible_pkg_mgr == "dnf"
+
+        - name: Create NGINX repo with stable version on Redhat family
+          ansible.builtin.copy:     
+            dest: /etc/yum.repos.d/nginx.repo
+            content: |
+              [nginx-stable]
+              name=nginx stable repo
+              baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+              gpgcheck=1
+              enabled=1
+              gpgkey=https://nginx.org/keys/nginx_signing.key
+              module_hotfixes=true
+     
+        - name: Refresh yum metadata cache
+          ansible.builtin.yum:
+            name: '*'
+            state: latest
+            update_cache: true
+          when: ansible_distribution_major_version | int < 8 and ansible_pkg_mgr == "yum"
+          ignore_errors: true
+          changed_when: false
+
+        - name: Refresh dnf metadata cache
+          ansible.builtin.dnf:
+            name: '*'
+            state: latest
+            update_cache: true
+          when: ansible_distribution_major_version | int >= 8 and ansible_pkg_mgr == "dnf"
+          ignore_errors: true
+          changed_when: false
+
+        - name: Install NGINX for yum based systems
+          ansible.builtin.yum:
+            name: nginx
+            state: present
+            update_cache: true
+          when: ansible_distribution_major_version | int < 8 and ansible_pkg_mgr == "yum"
+
+        - name: Install NGINX for dnf based systems
+          ansible.builtin.dnf:
+            name: nginx
+            state: present
+            update_cache: true
+          when: ansible_distribution_major_version | int >= 8 and ansible_pkg_mgr == "dnf"  
+      when: ansible_os_family == "RedHat"
+
+    - name: Install NGINX on Debian family
+      block:
+        - name: Install prerequisites for NGINX repo on apt based systems
+          ansible.builtin.apt:
+            state: present
+            update_cache: true
+            pkg:
+              - curl
+              - gnupg2
+              - ca-certificates
+              - lsb-release
+              - ubuntu-keyring
+          ignore_errors: true
+
+        - name: Remove all nginx repo files (cleanup)
+          ansible.builtin.file:
+            path: /etc/apt/sources.list.d/nginx.list
+            state: absent
+
+        - name: Clean apt cache
+          ansible.builtin.command: apt-get clean
+
+        - name: Fetch and convert nginx signing key to keyring format
+          ansible.builtin.shell: >
+            curl -fsSL https://nginx.org/keys/nginx_signing.key \
+            | gpg --dearmor \
+            | tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
+          args:
+            creates: /usr/share/keyrings/nginx-archive-keyring.gpg
+
+        - name: verify key fingerprint match expected (dry-run import-show)
+          ansible.builtin.command: >
+            gpg --dry-run  --quiet --no-keyring --import --import-options import-show /usr/share/keyrings/nginx-archive-keyring.gpg
+          register: nginx_key_info
+          changed_when: false
+
+        - name: Assert nginx key fingerprint is correct
+          ansible.builtin.assert:
+            that:
+              - "'8540A6F18833A80E9C1653A42FD21310B49F6B46' in nginx_key_info.stdout"
+              - "'573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62' in nginx_key_info.stdout"
+              - "'9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3' in nginx_key_info.stdout"
+            fail_msg: "NGINX GPG key fingerprint does not match expected value!"
+            success_msg: "NGINX GPG key fingerprint matches expected value."
+
+        - name: Add nginx official repo
+          ansible.builtin.apt_repository:
+            repo: "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu {{ ansible_distribution_release }} nginx"
+            filename: nginx
+            state: present
+
+        - name: Install nginx from ubuntu repo
+          ansible.builtin.apt:
+            update_cache: true
+            state: present
+            pkg:
+              - nginx
+      when: ansible_os_family == "Debian" or ansible_distribution == "Ubuntu"
+
+    - name: Start NGINX using nginx binary
+      block:
+        - name: Check if index.html exists
+          ansible.builtin.stat:
+            path: /var/www/html/index.html
+          register: index_stat
+
+        - name: compute timestamp for backup filename
+          ansible.builtin.set_fact:
+            index_backup_suffix: "{{ ansible_date_time.date }}-{{ ansible_date_time.hour}}{{ ansible_date_time.minute}}{{ ansible_date_time.second }}"
+
+        - name: Backup existing index.html with date suffix
+          ansible.builtin.command: >
+            mv /var/www/html/index.html /var/www/html/index.html.bak.{{ index_backup_suffix }}
+          when: index_stat.stat.exists | default(false)
+
+        - name: Create a simple index.html
+          ansible.builtin.copy:
+            src: index.html
+            dest: /usr/share/nginx/html/
+            mode: '0644'
+
+        - name: check nginx binary is present in path
+          ansible.builtin.command: which nginx
+          register: rhel_nginx_bin
+          changed_when: false
+
+        - name: Assert nginx binary exists
+          ansible.builtin.assert:
+            that:
+              - rhel_nginx_bin.rc == 0
+            fail_msg: "NGINX binary not found in path. package install may have failed!"
+
+        - name: Validate nginx configuration file
+          ansible.builtin.command: nginx -t
+          register: rhel_nginx_t
+          changed_when: false
+
+        - name: Show nginx -t result
+          ansible.builtin.debug:
+            msg:
+              - "===== NGINX -t RESULT ====="
+              - "Host: {{ inventory_hostname }}"
+              - "STDOUT: {{ rhel_nginx_t.stdout }}"
+              - "STDERR: {{ rhel_nginx_t.stderr }}"
+
+        - name: Remove stale nginx.pid if exists
+          ansible.builtin.file:
+            path: /var/run/nginx.pid
+            state: absent
+
+        - name: Start nginx master process
+          ansible.builtin.command: nginx
+          register: rhel_nginx_start
+          changed_when: true
+          ignore_errors: true
+
+        - name: wait for port 80 to be open
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 80
+            delay: 1
+            timeout: 30
+
+        - name: Verify nginx process with HTTP 200 response
+          ansible.builtin.uri:
+            url: http://127.0.0.1
+            method: HEAD
+            status_code: 200
+          register: rhel_nginx_http
+          retries: 5
+          delay: 3
+
+        - name: Show nginx HTTP response output
+          ansible.builtin.debug:
+            msg:
+              - "===== NGINX HTTP RESPONSE ====="
+              - "Host: {{ inventory_hostname }}"
+              - "HTTP/1.1 {{ rhel_nginx_http.status }} {{ 'OK' if rhel_nginx_http.status == 200 else 'UNKNOWN' }}"
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian" or ansible_os_family == "Ubuntu"
