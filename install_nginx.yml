@@ -142,7 +142,7 @@
       block:
         - name: Check if index.html exists
           ansible.builtin.stat:
-            path: /var/www/html/index.html
+            path: /usr/share/nginx/html/index.html
           register: index_stat
 
         - name: compute timestamp for backup filename
@@ -151,7 +151,7 @@
 
         - name: Backup existing index.html with date suffix
           ansible.builtin.command: >
-            mv /var/www/html/index.html /var/www/html/index.html.bak.{{ index_backup_suffix }}
+            mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.bak.{{ index_backup_suffix }}
           when: index_stat.stat.exists | default(false)
 
         - name: Create a simple index.html
