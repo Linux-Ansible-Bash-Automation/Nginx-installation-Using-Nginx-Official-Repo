@@ -1,5 +1,3 @@
----
-
 # 🚀 Automated NGINX Installation using Bash + Ansible
 
 This project provides a **robust, interactive, and enterprise-ready automation** to install and validate **NGINX using the official NGINX repositories** across **RedHat and Debian based Linux distributions**.
@@ -174,7 +172,7 @@ HTTP/1.1 200 OK
 ## ⚠️ Notes & Known Considerations
 
 * `ansible_remote_tmp` is explicitly set to `/tmp` for compatibility with AD users
-* Designed for **AWX / Tower / enterprise environments**
+* It also can use for **AWX / Tower / enterprise environments**
 * Works with password-based SSH (can be extended to SSH keys)
 
 ---
@@ -191,13 +189,6 @@ HTTP/1.1 200 OK
 ## 👨‍💻 Author
 
 **Sandeep Bandela**
-Linux | Ansible | Automation | Enterprise Infrastructure
-
----
-
-## 📄 License
-
-This project is released under the **MIT License**.
-Feel free to use, modify, and share.
+**Linux | Ansible | Automation | Enterprise Infrastructure**
 
 ---
