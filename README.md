@@ -188,7 +188,7 @@ HTTP/1.1 200 OK
 
 ## 👨‍💻 Author
 
-**Sandeep Bandela**
-**Linux | Ansible | Automation | Enterprise Infrastructure**
+* **Sandeep Reddy Bandela**
+* **Linux | Ansible | Automation | Enterprise Infrastructure**
 
 ---
