@@ -48,8 +48,6 @@
      
         - name: Refresh yum metadata cache
           ansible.builtin.yum:
-            name: '*'
-            state: latest
             update_cache: true
           when: ansible_distribution_major_version | int < 8 and ansible_pkg_mgr == "yum"
           ignore_errors: true
@@ -57,8 +55,6 @@
 
         - name: Refresh dnf metadata cache
           ansible.builtin.dnf:
-            name: '*'
-            state: latest
             update_cache: true
           when: ansible_distribution_major_version | int >= 8 and ansible_pkg_mgr == "dnf"
           ignore_errors: true
@@ -159,21 +155,26 @@
             src: index.html
             dest: /usr/share/nginx/html/
             mode: '0644'
-
+        
+        - name: Ensure NGINX service is enabled 
+          ansible.builtin.service:
+            name: nginx
+            enabled: true
+            
         - name: check nginx binary is present in path
           ansible.builtin.command: which nginx
-          register: rhel_nginx_bin
+          register: nginx_bin
           changed_when: false
 
         - name: Assert nginx binary exists
           ansible.builtin.assert:
             that:
-              - rhel_nginx_bin.rc == 0
+              - nginx_bin.rc == 0
             fail_msg: "NGINX binary not found in path. package install may have failed!"
 
         - name: Validate nginx configuration file
           ansible.builtin.command: nginx -t
-          register: rhel_nginx_t
+          register: nginx_t
           changed_when: false
 
         - name: Show nginx -t result
@@ -181,8 +182,8 @@
             msg:
               - "===== NGINX -t RESULT ====="
               - "Host: {{ inventory_hostname }}"
-              - "STDOUT: {{ rhel_nginx_t.stdout }}"
-              - "STDERR: {{ rhel_nginx_t.stderr }}"
+              - "STDOUT: {{ nginx_t.stdout }}"
+              - "STDERR: {{ nginx_t.stderr }}"
 
         - name: Remove stale nginx.pid if exists
           ansible.builtin.file:
@@ -191,7 +192,7 @@
 
         - name: Start nginx master process
           ansible.builtin.command: nginx
-          register: rhel_nginx_start
+          register: nginx_start
           changed_when: true
           ignore_errors: true
 
@@ -207,7 +208,7 @@
             url: http://127.0.0.1
             method: HEAD
             status_code: 200
-          register: rhel_nginx_http
+          register: nginx_http
           retries: 5
           delay: 3
 
@@ -216,5 +217,5 @@
             msg:
               - "===== NGINX HTTP RESPONSE ====="
               - "Host: {{ inventory_hostname }}"
-              - "HTTP/1.1 {{ rhel_nginx_http.status }} {{ 'OK' if rhel_nginx_http.status == 200 else 'UNKNOWN' }}"
+              - "HTTP/1.1 {{ nginx_http.status }} {{ 'OK' if nginx_http.status == 200 else 'UNKNOWN' }}"
       when: ansible_os_family == "RedHat" or ansible_os_family == "Debian" or ansible_os_family == "Ubuntu"
